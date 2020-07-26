@@ -1,0 +1,19 @@
+Using csv2json
+==========================================
+
+Import it:
+
+    >>> from Csv2Json import csv2json
+
+Now use it:
+
+    >>> csv2json(r'data.csv')
+    Json file successfully created.
+    >>> csv2json(r'C:\data.csv')
+    The CSV data file is missing.
+    >>> csv2json(r'data_e.csv')
+    Some other error occurred.
+    >>> csv2json()
+    Traceback (most recent call last):
+      File "<stdin>", line 1, in <module>
+    TypeError: csv2json() missing 1 required positional argument: 'path'
