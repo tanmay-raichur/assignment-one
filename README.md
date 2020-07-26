@@ -1,3 +1,10 @@
+CSV to JSON Converter
+======================================
+Converts CSV file into nested Json file which forms a tree structure
+    Input to the function will be the path to CSV file including file name
+    Output will a Json file
+
+
 Technology to parse data in CSV
 ======================================
 Pandas - Pandas dataframe to process csv data has been used for following reasons
