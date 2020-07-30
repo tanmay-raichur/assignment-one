@@ -19,7 +19,8 @@ def csv2json(path: str) -> None:
         no_attr = 3
         no_levels = int(len(headers)/no_attr)
         list_levels = [['label', 'id', 'link'] for i in range(no_levels)]
-        final = form_tree(file_data, no_levels, list_levels, no_attr)
+        all_items = filedata_to_flatlist(file_data, no_levels, list_levels, no_attr)
+        final = flatlist_to_tree(all_items, no_levels)
         create_json(final)
 
     except FileNotFoundError:
@@ -42,71 +43,69 @@ def read_edit_data(path: str) -> list:
     return file_data, headers
 
 
-def form_tree(file_data: list, no_levels: int, list_levels: list, no_attr: int) -> list:
+def filedata_to_flatlist(file_data: list, no_levels: int, list_levels: list, no_attr: int) -> list:
     """ This function creates a json tree structure
     and returns a list which has the created json tree
     """
-    data = {}
-    final = []
-    index_list = {}
-    pos = int
+    all_items = []
+    id_list = []
+    curr_id = 0
 
     for line in file_data.values:
-        split_line, id_index = splitLine_findIndex(line, no_levels, no_attr, index_list)
+        level_grp = split_line(line, no_levels, no_attr)
         for level in range(0, (no_levels)):
-            data = {list_levels[level][i]: split_line[level][i] for i in range(no_attr)}
+            data = {list_levels[level][i]: level_grp[level][i] for i in range(no_attr)}
             data['children'] = []
-            Id = data['id']
-            id_isnull = (Id != Id)
-            id_exists = (Id in index_list.keys())
+            prev_id = curr_id
+            curr_id = data['id']
+            id_isnull = (curr_id != curr_id)
+            id_exists = (curr_id in id_list)
             if not id_exists and not id_isnull:
                 data['id'] = int(data['id'])
                 if level == 0:
-                    final.append(data.copy())
-                    pos = len(final)
-                    index_list[Id] = pos-1
+                    all_items.append(data.copy())
                 else:
-                    indexes = id_index[:level]
-                    add_child_expr, child_pos_expr = create_expr(indexes)
-                    eval(add_child_expr)
-                    pos = eval(child_pos_expr)
-                    index_list[Id] = pos-1
+                    data['level'] = level
+                    data['parent'] = prev_id
+                    all_items.append(data.copy())
+                id_list.append(curr_id)
             data.clear()
-    return final
+    return all_items
 
 
-def splitLine_findIndex(line: list, no_levels: int, no_attr: int, index_list: dict) -> list:
+def split_line(line: list, no_levels: int, no_attr: int) -> list:
     """ This function splits the line into one list per level
-    and finds the index of parent item for child insertion
     """
-    split_line = []
-    id_index = []
+    level_grp = []
     for level in range(no_levels):
-        split_line.append(line[level * no_attr:(level + 1) * no_attr])
-        Id = split_line[level][1]
-        id_isnull = (Id != Id)
-        id_exists = (Id in index_list.keys())
-        if not id_isnull and id_exists:
-            id_index.append(index_list[Id])
-    return split_line, id_index
+        level_grp.append(line[level * no_attr:(level + 1) * no_attr])
+    return level_grp
 
 
-def create_expr(indexes: list) -> str:
-    """ This function creates and returns expressions for child insertion
-    as per the level to which child node needs to be inserted.
-    After insertion finds and returns the position of inserted child
+def flatlist_to_tree(all_items: list, no_levels: int) -> list:
+    """ This function will convert flattened list into
+    a tree structure as requested
     """
-    join = "]['children'][".join([str(m) for m in indexes])
+    pop_list = []
+    final = []
+    for j in reversed(range(1, no_levels)):
+        for i in range(len(all_items)):
+            if 'level' in all_items[i].keys() and all_items[i]['level'] == j:
+                pop_list.append(i)
+                data = all_items[i].copy()
+                parent = all_items[i]['parent']
+                for k in range(len(all_items)):
+                    if all_items[k]['id'] == parent:
+                        data.pop('level')
+                        data.pop('parent')
+                        all_items[k]['children'].append(data.copy())
+                        break
 
-    start = "final["
-    end = "]['children'].append(data.copy())"
-    add_child_expr = start+join+end
+    for i in range(len(all_items)):
+        if 'level' not in all_items[i].keys():
+            final.append(all_items[i])
 
-    start = "len(final["
-    end = "]['children'])"
-    child_pos_expr = start+join+end
-
-    return add_child_expr, child_pos_expr
+    return final
 
 
 def create_json(final: list) -> None:
