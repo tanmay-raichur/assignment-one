@@ -15,11 +15,7 @@ def csv2json(path: str) -> None:
     4. Duplicate IDs at any level will be ignored
     """
     try:
-        file_data = pd.read_csv(path)
-        headers = list(file_data.columns)
-        headers.pop(0)
-        file_data = file_data[headers[:]]
-        file_data.dropna(subset=[headers[0]], inplace=True)
+        file_data, headers = read_edit_data(path)
         no_attr = 3
         no_levels = int(len(headers)/no_attr)
         list_levels = [['label', 'id', 'link'] for i in range(no_levels)]
@@ -32,6 +28,18 @@ def csv2json(path: str) -> None:
         logging.error('The required permissions missing on CSV file.')
     except Exception:
         logging.error('Some other error occurred.', exc_info=True)
+
+
+def read_edit_data(path: str) -> list:
+    """ This function will read the csv data and
+    make necessary transformations to the data frame
+    """
+    file_data = pd.read_csv(path)
+    headers = list(file_data.columns)
+    headers.pop(0)
+    file_data = file_data[headers[:]]
+    file_data.dropna(subset=[headers[0]], inplace=True)
+    return file_data, headers
 
 
 def form_tree(file_data: list, no_levels: int, list_levels: list, no_attr: int) -> list:
@@ -67,7 +75,7 @@ def form_tree(file_data: list, no_levels: int, list_levels: list, no_attr: int) 
     return final
 
 
-def splitLine_findIndex(line: list, no_levels: int, no_attr: int, index_list: list) -> list:
+def splitLine_findIndex(line: list, no_levels: int, no_attr: int, index_list: dict) -> list:
     """ This function splits the line into one list per level
     and finds the index of parent item for child insertion
     """
