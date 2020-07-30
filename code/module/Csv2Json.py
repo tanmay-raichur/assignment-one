@@ -1,73 +1,126 @@
-def csv2json(path: str) -> 'data.json':
-    """ Converts CSV file into nested Json file which forms a tree structure
+import pandas as pd
+import json
+import logging
+logging.basicConfig(level=logging.INFO)
+
+
+def csv2json(path: str) -> None:
+    """ Converts CSV file into nested Json list which forms a tree structure
     Input to the function will be the path to CSV file including file name
-    
+
     CSV file needs to be in agreed format, below points are important
     1. Base URL is first column and need not be displayed in the output Json
     2. Each level of data will have 3 columns Name, ID and Link in said order
     3. File can have any number of columns or rows
     4. Duplicate IDs at any level will be ignored
-    
-    Output will a Json file created in same path as .py file
     """
-    import pandas as pd
-    import json
     try:
-        df = pd.read_csv(path)
-        list_heads = []
-        for k,v in df.items():
-            list_heads.append(k)                                         # Collect header columns
-        df = df[list_heads[1:]]                                          # Base URL column removed from dataframe
-        df.dropna(subset = [list_heads[1]], inplace=True)                # Remove blank rows         
-        list_heads.pop(0)                                                # Remove Base URL
-        no_of_levels = int(len(list_heads)/3)                            # Calculate number of levels based on number of columns in CSV and assuming each level has 3 attributes
-        n = 3                                                            # Assuming each level has 3 attributes
-        list_levels = [list_heads[i * n:(i + 1) * n] for i in range((len(list_heads) + n - 1) // n )] # Create nested lists, one for each level
-        for record in list_levels:                                       # Rename Headers. Assumption - Label, Id and Link are the three attributes per level and in given order
-            record[0]='label'
-            record[1]='id'
-            record[2]='link'
-        d = {}
-        final = []
-        index_list = []
-        dict_list = {}
-        position = int
+        file_data, headers = read_edit_data(path)
+        no_attr = 3
+        no_levels = int(len(headers)/no_attr)
+        list_levels = [['label', 'id', 'link'] for i in range(no_levels)]
+        final = form_tree(file_data, no_levels, list_levels, no_attr)
+        create_json(final)
 
-        for line in df.values:
-            data_levels = [line[i * n:(i + 1) * n] for i in range((len(line) + n - 1) // n )]    # Divide data into lists, one for each level
-            index_list = [dict_list[data_levels[i][1]] for i in range(len(data_levels)) if data_levels[i][1] == data_levels[i][1] and data_levels[i][1] in dict_list.keys()]  # Store index of each item id in line - Assumption is position of id column in CSV file
-            j = 0
-            while j <= (no_of_levels-1):
-                d = {list_levels[j][i] : data_levels[j][i] for i in range(len(list_levels[j]))}  # Dictionary to map data with headers proposed in Readme.md
-                d['children'] = []
-                if not d['id'] in dict_list.keys() and d['id'] == d['id']:                       # Check Item Id not already processed and is not null
-                    d['id'] = int(d['id'])
-                    if j == 0:                                                                   # Top level parent added in final list and positions noted for inserting child, if any
-                        final.append(d.copy())
-                        position = len(final)
-                        dict_list[d['id']] = position-1
-                    else:                                                                        # All children added in final list one by one and their positions noted for inserting child, if any
-                        indexes = index_list[:j]
-                        eval("final["+"]['children'][".join([str(m) for m in indexes])+"]['children'].append(d.copy())")
-                        position = eval("len(final["+"]['children'][".join([str(m) for m in indexes])+"]['children'])")
-                        dict_list[d['id']] = position-1
-                d.clear()
-                j += 1
-            index_list.clear()
-
-        json_dump = json.dumps(final)
-        json_str = json.loads(json_dump, parse_int=str)                                             # Converting id to str as shown in Readme.md
-        final_json = json.dumps(json_str, indent = 4)
-        with open('data.json', 'w') as outfile:                                                     # Write output to Json file
-            outfile.write(final_json)
-            print("Json file successfully created.")
     except FileNotFoundError:
-        print('The CSV data file is missing.')
+        logging.error('The CSV data file is missing.')
     except PermissionError:
-        print('The required permissions missing on CSV file.')
-    except:
-        print('Some other error occurred.')
+        logging.error('The required permissions missing on CSV file.')
+    except Exception:
+        logging.error('Some other error occurred.', exc_info=True)
+
+
+def read_edit_data(path: str) -> list:
+    """ This function will read the csv data and
+    make necessary transformations to the data frame
+    """
+    file_data = pd.read_csv(path)
+    headers = list(file_data.columns)
+    headers.pop(0)
+    file_data = file_data[headers[:]]
+    file_data.dropna(subset=[headers[0]], inplace=True)
+    return file_data, headers
+
+
+def form_tree(file_data: list, no_levels: int, list_levels: list, no_attr: int) -> list:
+    """ This function creates a json tree structure
+    and returns a list which has the created json tree
+    """
+    data = {}
+    final = []
+    index_list = {}
+    pos = int
+
+    for line in file_data.values:
+        split_line, id_index = splitLine_findIndex(line, no_levels, no_attr, index_list)
+        for level in range(0, (no_levels)):
+            data = {list_levels[level][i]: split_line[level][i] for i in range(no_attr)}
+            data['children'] = []
+            Id = data['id']
+            id_isnull = (Id != Id)
+            id_exists = (Id in index_list.keys())
+            if not id_exists and not id_isnull:
+                data['id'] = int(data['id'])
+                if level == 0:
+                    final.append(data.copy())
+                    pos = len(final)
+                    index_list[Id] = pos-1
+                else:
+                    indexes = id_index[:level]
+                    add_child_expr, child_pos_expr = create_expr(indexes)
+                    eval(add_child_expr)
+                    pos = eval(child_pos_expr)
+                    index_list[Id] = pos-1
+            data.clear()
+    return final
+
+
+def splitLine_findIndex(line: list, no_levels: int, no_attr: int, index_list: dict) -> list:
+    """ This function splits the line into one list per level
+    and finds the index of parent item for child insertion
+    """
+    split_line = []
+    id_index = []
+    for level in range(no_levels):
+        split_line.append(line[level * no_attr:(level + 1) * no_attr])
+        Id = split_line[level][1]
+        id_isnull = (Id != Id)
+        id_exists = (Id in index_list.keys())
+        if not id_isnull and id_exists:
+            id_index.append(index_list[Id])
+    return split_line, id_index
+
+
+def create_expr(indexes: list) -> str:
+    """ This function creates and returns expressions for child insertion
+    as per the level to which child node needs to be inserted.
+    After insertion finds and returns the position of inserted child
+    """
+    join = "]['children'][".join([str(m) for m in indexes])
+
+    start = "final["
+    end = "]['children'].append(data.copy())"
+    add_child_expr = start+join+end
+
+    start = "len(final["
+    end = "]['children'])"
+    child_pos_expr = start+join+end
+
+    return add_child_expr, child_pos_expr
+
+
+def create_json(final: list) -> None:
+    """ This function takes Json list as input
+    Creates a json file with Json list string
+    at the same path as Csv2Json.py file
+    """
+    json_dump = json.dumps(final)
+    json_str = json.loads(json_dump, parse_int=str)
+    final_json = json.dumps(json_str, indent=4)
+    with open('data.json', 'w') as outfile:
+        outfile.write(final_json)
+        logging.info("Json file successfully created.")
+
 
 if __name__ == "__main__":
-    import doctest
-    doctest.testfile("UnitTest.txt")
+    csv2json(r'data_c.csv')
